@@ -209,7 +209,7 @@ class BASLER_EXPORT Camera
     // void _freeStreamGrabber();
     void _allocTmpBuffer();
     // void _initStreamGrabber(BufferMode mode);
-    // void _startAcq();
+    void _startAcq();
     void _readTrigMode();
     void _forceVideoMode(bool force);
 

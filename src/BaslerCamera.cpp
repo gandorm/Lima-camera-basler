@@ -358,12 +358,30 @@ void Camera::prepareAcq()
         THROW_HW_ERROR(Error) << e.GetDescription();
     }
 }
+
 //---------------------------
 //- Camera::start()
 //---------------------------
 void Camera::startAcq()
 {
     DEB_MEMBER_FUNCT();
+    _startAcq();
+}
+
+void Camera::_startAcq()
+{
+  DEB_MEMBER_FUNCT();
+
+//   Camera_->StartGrabbing();
+//   Camera_->AcquisitionStart.Execute();
+
+//   Start acqusition thread
+//   AutoMutex aLock(m_cond.mutex());
+//   m_wait_flag = false;
+//   m_cond.broadcast();
+    cout << m_image_number;
+    Camera_->RegisterConfiguration( (CConfigurationEventHandler*) NULL, RegistrationMode_ReplaceAll, Cleanup_None);
+
     StdBufferCbMgr& buffer_mgr = m_buffer_ctrl_obj.getBuffer();
     bool continueAcq = true;
     // m_cond.broadcast();
@@ -382,7 +400,7 @@ void Camera::startAcq()
 	  }
 	else {
 
-        Camera_->StartGrabbing(m_nb_frames);
+        Camera_->StartGrabbing(m_nb_frames, GrabStrategy_OneByOne);
 
         // This smart pointer will receive the grab result data.
         CGrabResultPtr ptrGrabResult;
@@ -392,44 +410,33 @@ void Camera::startAcq()
         while (Camera_->IsGrabbing())
         {
             // Wait for an image and then retrieve it. A timeout of 5000 ms is used.
-            Camera_->RetrieveResult( 3000, ptrGrabResult, TimeoutHandling_ThrowException );
+            Camera_->RetrieveResult(5000, ptrGrabResult, TimeoutHandling_ThrowException);
             // Image grabbed successfully?
             if (ptrGrabResult->GrabSucceeded())
             {
                 // Access the image data.
-                cout << "SizeX: " << ptrGrabResult->GetWidth() << endl;
-                cout << "SizeY: " << ptrGrabResult->GetHeight() << endl;
                 const uint8_t* pImageBuffer = (uint8_t*) ptrGrabResult->GetBuffer();
-                cout << "Gray value of first pixel: " << (uint32_t) pImageBuffer[0] << endl << endl;
                 int nb_buffers;
                 buffer_mgr.getNbBuffers(nb_buffers);
-                cout << "LECE: " << nb_buffers << endl;
-                // if (m_nb_frames == 0 || 
-                // m_image_number < int(m_nb_frames - nb_buffers));
-                //   StreamGrabber_->QueueBuffer(Result.Handle(),NULL);
                             
                 HwFrameInfoType frame_info;
-                // ++m_image_number;
-                cout << "LECE2: " << m_image_number << endl;
-                // ++m_image_number;
                 frame_info.acq_frame_nb = m_image_number;
-                cout << "LECE3: " << frame_info << endl;
-                cout << "LECE4: " << buffer_mgr.getFrameBufferPtr(ptrGrabResult) << endl;
-                
-                // buffer_mgr.newFrameReady(frame_info);
-                DEB_TRACE() << DEB_VAR1(frame_info);
-                ImageSize_ = ptrGrabResult->GetBufferSize();
-                // copy TmpBuffer frame to SoftBuffer frame room
-                
-                cout << "m_nb_frames: " << m_nb_frames << endl;
+                void *framePt = buffer_mgr.getFrameBufferPtr(m_image_number);
+                const FrameDim& fDim = buffer_mgr.getFrameDim();
+                void* srcPt = ((char*)pImageBuffer) + (m_image_number * fDim.getMemSize());
+                DEB_TRACE() << "memcpy:" << DEB_VAR2(srcPt,framePt);
+                memcpy(framePt,srcPt,fDim.getMemSize());
+
+                continueAcq = buffer_mgr.newFrameReady(frame_info);
+                                
                 if (m_nb_frames == 0)
                     {
-                void *ptr = buffer_mgr.getFrameBufferPtr(ptrGrabResult);
+                void *ptr = buffer_mgr.getFrameBufferPtr(m_image_number);
                 memcpy(ptr, (void *)ptrGrabResult->GetBuffer(), ImageSize_);
                     }
                 
-                continueAcq = buffer_mgr.newFrameReady(frame_info);
                 DEB_TRACE() << DEB_VAR1(continueAcq);
+                ++m_image_number;
                
                 
             #ifdef PYLON_WIN_BUILD
@@ -440,7 +447,6 @@ void Camera::startAcq()
             {
                 cout << "Error: " << std::hex << ptrGrabResult->GetErrorCode() << std::dec << " " << ptrGrabResult->GetErrorDescription() << endl;
             }
-            ++m_image_number;
         }
     }
     }
@@ -450,19 +456,6 @@ void Camera::startAcq()
         THROW_HW_ERROR(Error) << e.GetDescription();
     }
 }
-
-// void Camera::_startAcq()
-// {
-//   DEB_MEMBER_FUNCT();
-
-//   Camera_->StartGrabbing();
-//   Camera_->AcquisitionStart.Execute();
-
-//   //Start acqusition thread
-//   AutoMutex aLock(m_cond.mutex());
-//   m_wait_flag = false;
-//   m_cond.broadcast();
-// }
 //---------------------------
 //- Camera::stopAcq()
 //---------------------------
