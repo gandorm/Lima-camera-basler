@@ -371,20 +371,10 @@ void Camera::startAcq()
 void Camera::_startAcq()
 {
   DEB_MEMBER_FUNCT();
-
-//   Camera_->StartGrabbing();
-//   Camera_->AcquisitionStart.Execute();
-
-//   Start acqusition thread
-//   AutoMutex aLock(m_cond.mutex());
-//   m_wait_flag = false;
-//   m_cond.broadcast();
-    cout << m_image_number;
     Camera_->RegisterConfiguration( (CConfigurationEventHandler*) NULL, RegistrationMode_ReplaceAll, Cleanup_None);
 
     StdBufferCbMgr& buffer_mgr = m_buffer_ctrl_obj.getBuffer();
     bool continueAcq = true;
-    // m_cond.broadcast();
     try
     {
 	if(!m_image_number)
@@ -399,8 +389,9 @@ void Camera::_startAcq()
 	    this->Camera_->TriggerSoftware.Execute();
 	  }
 	else {
-
-        Camera_->StartGrabbing(m_nb_frames, GrabStrategy_OneByOne);
+        
+        if (m_nb_frames) {
+         Camera_->StartGrabbing(m_nb_frames);
 
         // This smart pointer will receive the grab result data.
         CGrabResultPtr ptrGrabResult;
@@ -423,18 +414,12 @@ void Camera::_startAcq()
                 frame_info.acq_frame_nb = m_image_number;
                 void *framePt = buffer_mgr.getFrameBufferPtr(m_image_number);
                 const FrameDim& fDim = buffer_mgr.getFrameDim();
-                void* srcPt = ((char*)pImageBuffer) + (m_image_number * fDim.getMemSize());
+                void* srcPt = ((char*)pImageBuffer) + (0 * fDim.getMemSize());
                 DEB_TRACE() << "memcpy:" << DEB_VAR2(srcPt,framePt);
                 memcpy(framePt,srcPt,fDim.getMemSize());
 
                 continueAcq = buffer_mgr.newFrameReady(frame_info);
-                                
-                if (m_nb_frames == 0)
-                    {
-                void *ptr = buffer_mgr.getFrameBufferPtr(m_image_number);
-                memcpy(ptr, (void *)ptrGrabResult->GetBuffer(), ImageSize_);
-                    }
-                
+                                            
                 DEB_TRACE() << DEB_VAR1(continueAcq);
                 ++m_image_number;
                
@@ -447,6 +432,7 @@ void Camera::_startAcq()
             {
                 cout << "Error: " << std::hex << ptrGrabResult->GetErrorCode() << std::dec << " " << ptrGrabResult->GetErrorDescription() << endl;
             }
+        }   
         }
     }
     }
