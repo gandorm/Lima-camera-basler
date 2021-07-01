@@ -206,9 +206,7 @@ class BASLER_EXPORT Camera
     friend class _AcqThread;
     void _stopAcq(bool);
     void _setStatus(Camera::Status status,bool force);
-    // void _freeStreamGrabber();
     void _allocTmpBuffer();
-    // void _initStreamGrabber(BufferMode mode);
     void _startAcq();
     void _readTrigMode();
     void _forceVideoMode(bool force);
@@ -238,8 +236,6 @@ class BASLER_EXPORT Camera
     PylonAutoInitTerm             auto_init_term_;
     DeviceInfoList_t              devices_;
     Camera_t*                     Camera_;
-    // Camera_t::StreamGrabber_t*    StreamGrabber_;
-    WaitObjectEx                  WaitObject_;
     size_t                        ImageSize_;
     _AcqThread*                   m_acq_thread;
     Cond                          m_cond;

@@ -107,7 +107,6 @@ Camera::Camera(const std::string& camera_id,int packet_size,int receive_priority
           m_latency_time(0.),
           m_socketBufferSize(0),
           Camera_(NULL),
-        //   StreamGrabber_(NULL),
           m_receive_priority(receive_priority),
 	  m_video_flag_mode(false),
 	  m_video(NULL)
@@ -259,14 +258,13 @@ Camera::Camera(const std::string& camera_id,int packet_size,int receive_priority
         DEB_TRACE() << "Set the camera to continuous frame mode";
         Camera_->TriggerSelector.SetValue(TriggerSelector_AcquisitionStart);
         Camera_->AcquisitionMode.SetValue(AcquisitionMode_Continuous);
-        
-        if ( GenApi::IsAvailable(Camera_->ExposureAuto ))
+        if ( IsAvailable(Camera_->ExposureAuto ))
         {
             DEB_TRACE() << "Set ExposureAuto to Off";           
             Camera_->ExposureAuto.SetValue(ExposureAuto_Off);
         }
 
-	if (GenApi::IsAvailable(Camera_->TestImageSelector ))
+	if (IsAvailable(Camera_->TestImageSelector ))
 	{
             DEB_TRACE() << "Set TestImage to Off";           
             Camera_->TestImageSelector.SetValue(TestImageSelector_Off);	  
@@ -278,9 +276,7 @@ Camera::Camera(const std::string& camera_id,int packet_size,int receive_priority
         // Get the image buffer size
         DEB_TRACE() << "Get the image buffer size";
         ImageSize_ = (size_t)(Camera_->PayloadSize.GetValue());
-           
-        WaitObject_ = WaitObjectEx::Create();
-    
+               
         m_acq_thread = new _AcqThread(*this);
         m_acq_thread->start();
     }
@@ -309,10 +305,6 @@ Camera::~Camera()
         delete m_acq_thread;
         m_acq_thread = NULL;
         
-        // Close stream grabber
-    //     DEB_TRACE() << "Close stream grabber";
-	// _freeStreamGrabber();
-
         // Close camera
         DEB_TRACE() << "Close camera";
         delete Camera_;
@@ -337,17 +329,7 @@ void Camera::prepareAcq()
     m_image_number=0;
 
     try
-    {
-    //   _freeStreamGrabber();
-      // For video (color camera or B/W forced to video) use a small 2-frames Tmp buffer
-      // to not stop acq if some frames are missing but just return the last acquired
-      // for other modes the SoftBuffer is filled by Pylon Grabber, and an frame error will
-      // stop the acquisition
-    //   if(m_video_flag_mode || m_nb_frames == 0)
-	// _initStreamGrabber(TmpBuffer);
-    //   else
-	// _initStreamGrabber(SoftBuffer);
-      
+    {     
 
       if(m_trigger_mode == IntTrigMult)
 	    _startAcq();
@@ -420,7 +402,6 @@ void Camera::_stopAcq(bool internalFlag)
             while(!internalFlag && m_thread_running)
             {
                 m_wait_flag = true;
-                WaitObject_.Signal();
                 m_cond.wait();
             }
             aLock.unlock();
@@ -431,10 +412,7 @@ void Camera::_stopAcq(bool internalFlag)
             // Stop acquisition
             DEB_TRACE() << "Stop acquisition";
             Camera_->StopGrabbing();
-            // Camera_->AcquisitionStop.Execute();
-	    
-	    // always free for both video or acquisition
-	    // _freeStreamGrabber();
+        
             _setStatus(Camera::Ready,false);
         }
     }
@@ -445,26 +423,7 @@ void Camera::_stopAcq(bool internalFlag)
     }    
 }
 
-// void Camera::_freeStreamGrabber()
-// {
-//   DEB_MEMBER_FUNCT();
-//   if(StreamGrabber_)
-//     {
-//       // Get the pending buffer back (You are not allowed to deregister
-//       // buffers when they are still queued)
-//       StreamGrabber_->CancelGrab();
-    
-//       // Get all buffers back
-//       for (GrabResult r; StreamGrabber_->RetrieveResult(r););
-    
-//       // Free all resources used for grabbing
-//       DEB_TRACE() << "Free all resources used for grabbing";
-//       StreamGrabber_->FinishGrab();
-//       StreamGrabber_->Close();
-//       delete StreamGrabber_;
-//       StreamGrabber_ = NULL;         
-//     }
-// }
+
 void Camera::_forceVideoMode(bool force)
 {
   DEB_MEMBER_FUNCT();
@@ -488,75 +447,6 @@ void Camera::_allocTmpBuffer()
     }
 }
 
-// void Camera::_initStreamGrabber(BufferMode mode)
-// {
-//   DEB_MEMBER_FUNCT();
-
-//   // Get the first stream grabber object of the selected camera
-//   StreamGrabber_ = new Camera_t::StreamGrabber_t(Camera_->GetStreamGrabber(0));
-//   DEB_TRACE() << "Get the first stream grabber object of the selected camera";
-
-//   //Change priority to m_receive_priority
-//   if(m_receive_priority > 0)
-//     {
-//       StreamGrabber_->ReceiveThreadPriorityOverride.SetValue(true);
-//       StreamGrabber_->ReceiveThreadPriority.SetValue(m_receive_priority);
-//     }
-//   // Set Socket Buffer Size
-//   DEB_TRACE() << "Set Socket Buffer Size";
-//   if (m_socketBufferSize >0 )
-//     {
-//       StreamGrabber_->SocketBufferSize.SetValue(m_socketBufferSize);
-//     }
-  
-//   // Open the stream grabber
-//   DEB_TRACE() << "Open the stream grabber";
-//   StreamGrabber_->Open();
-//   if(!StreamGrabber_->IsOpen())
-//     {
-//       delete StreamGrabber_;
-//       StreamGrabber_ = NULL;
-//       THROW_HW_ERROR(Error) << "Unable to open the steam grabber!";
-//     }
-//   // We won't use image buffers greater than ImageSize
-//   DEB_TRACE() << "We won't use image buffers greater than ImageSize";
-//   StreamGrabber_->MaxBufferSize.SetValue((const size_t)ImageSize_);
-
-//   // Allocate all resources for grabbing. Critical parameters like image
-//   // size now must not be changed until FinishGrab() is called.
-//   if (mode == TmpBuffer)
-//     {
-//       DEB_TRACE() << "We'll queue " << NB_TMP_BUFFER << " image buffers";
-//       StreamGrabber_->MaxNumBuffer.SetValue(NB_TMP_BUFFER);
-//       DEB_TRACE() << "Allocate all resources for grabbing, PrepareGrab";
-//       StreamGrabber_->PrepareGrab();
-      
-//       for(int i = 0;i < NB_TMP_BUFFER;++i)
-// 	{
-// 	  StreamBufferHandle bufferId = StreamGrabber_->RegisterBuffer(m_tmp_buffer[i],
-// 								       (const size_t)ImageSize_);
-// 	  StreamGrabber_->QueueBuffer(bufferId,NULL);
-// 	}
-//     }
-//   else // SoftBuffer
-//     {
-//       StdBufferCbMgr& buffer_mgr = m_buffer_ctrl_obj.getBuffer();
-//       int nb_buffers;
-//       buffer_mgr.getNbBuffers(nb_buffers);
-//       DEB_TRACE() << "We'll queue " << nb_buffers << " image buffers";
-//       StreamGrabber_->MaxNumBuffer.SetValue(nb_buffers);
-//       DEB_TRACE() << "Allocate all resources for grabbing, PrepareGrab";
-//       StreamGrabber_->PrepareGrab();
-      
-//       for(int i = 0;i < nb_buffers;++i)
-// 	{
-// 	  void *ptr = buffer_mgr.getFrameBufferPtr(i);	  
-// 	  StreamBufferHandle bufferId = StreamGrabber_->RegisterBuffer(ptr,
-// 								       (const size_t)ImageSize_);
-// 	StreamGrabber_->QueueBuffer(bufferId,NULL);
-//       }
-//     }
-// }
 
 //---------------------------
 //- Camera::_AcqThread::threadFunction()
@@ -705,7 +595,6 @@ Camera::_AcqThread::~_AcqThread()
 {
     AutoMutex aLock(m_cam.m_cond.mutex());
     m_cam.m_quit = true;
-    m_cam.WaitObject_.Signal();
     m_cam.m_cond.broadcast();
     aLock.unlock();
     
