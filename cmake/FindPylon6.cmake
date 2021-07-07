@@ -1,7 +1,5 @@
-set(PYLON_LIBRARIES /opt/pylon/lib)
+set(PYLON_LIBRARIES)
 set(PYLON_DEFINITIONS)
-set(PYLON_ROOT /opt/pylon)
-set(PYLON_INCLUDE_DIRS /opt/pylon/include)
 
 # Pylon base
 if (WIN32)

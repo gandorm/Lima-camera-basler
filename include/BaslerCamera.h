@@ -225,6 +225,7 @@ class BASLER_EXPORT Camera
     int                         m_timeout;
     double                      m_latency_time;
     int                         m_socketBufferSize;
+    volatile bool               m_is_usb;
     
     //- basler stuff 
     std::string                 m_camera_id;

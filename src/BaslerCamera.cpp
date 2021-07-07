@@ -106,6 +106,7 @@ Camera::Camera(const std::string& camera_id,int packet_size,int receive_priority
           m_timeout(DEFAULT_TIME_OUT),
           m_latency_time(0.),
           m_socketBufferSize(0),
+          m_is_usb(false),
           Camera_(NULL),
           m_receive_priority(receive_priority),
 	  m_video_flag_mode(false),
@@ -133,6 +134,7 @@ Camera::Camera(const std::string& camera_id,int packet_size,int receive_priority
             // m_camera_id is not really necessarily an IP, it may also be a DNS name
             Pylon::String_t pylon_camera_ip(_get_ip_addresse(m_camera_id.substr(IP_PREFIX.size()).c_str()));
             //- Find the Pylon device thanks to its IP Address
+            cout << "SET IP: " << pylon_camera_ip << endl;
             di.SetIpAddress( pylon_camera_ip);
             DEB_TRACE() << "Create the Pylon device attached to ip address: "
 			<< DEB_VAR1(m_camera_id);
@@ -141,6 +143,7 @@ Camera::Camera(const std::string& camera_id,int packet_size,int receive_priority
 	{
             Pylon::String_t serial_number(m_camera_id.substr(SN_PREFIX.size()).c_str());
             //- Find the Pylon device thanks to its serial number
+            cout << "SET SERIAL: " << serial_number << endl;
             di.SetSerialNumber(serial_number);
             DEB_TRACE() << "Create the Pylon device attached to serial number: "
 			<< DEB_VAR1(m_camera_id);
@@ -153,11 +156,12 @@ Camera::Camera(const std::string& camera_id,int packet_size,int receive_priority
             DEB_TRACE() << "Create the Pylon device attached to user name: "
 			<< DEB_VAR1(m_camera_id);
  	}
+
 	else 
         {
 	    THROW_CTL_ERROR(InvalidValue) << "Unrecognized camera id: " << camera_id;
         }
-
+  
         IPylonDevice* device = TlFactory.CreateDevice( di);
         if (!device)
         {
@@ -175,7 +179,8 @@ Camera::Camera(const std::string& camera_id,int packet_size,int receive_priority
         //- Get detector model and type
         m_detector_type  = Camera_->GetDeviceInfo().GetVendorName();
         m_detector_model = Camera_->GetDeviceInfo().GetModelName();
-
+        m_is_usb = Camera_->GetDeviceInfo().IsUsbDriverTypeAvailable();
+        
         //- Infos:
         DEB_TRACE() << DEB_VAR2(m_detector_type,m_detector_model);
         DEB_TRACE() << "SerialNumber    = " << Camera_->GetDeviceInfo().GetSerialNumber();
@@ -190,8 +195,10 @@ Camera::Camera(const std::string& camera_id,int packet_size,int receive_priority
         DEB_TRACE() << "Open camera";        
         Camera_->Open();
     
-        if(packet_size > 0)
-          Camera_->GevSCPSPacketSize.SetValue(packet_size);
+        if(packet_size > 0 && !m_is_usb) {
+          Camera_->GevSCPSPacketSize.SetValue(1000);
+
+        }
     
         // Set the image format and AOI
         DEB_TRACE() << "Set the image format and AOI";
@@ -236,7 +243,6 @@ Camera::Camera(const std::string& camera_id,int packet_size,int receive_priority
         }
         if(!formatSetFlag)
             THROW_HW_ERROR(Error) << "Unable to set PixelFormat for the camera!";
-        
         DEB_TRACE() << "Set the ROI to full frame";
 	if(isRoiAvailable())
 	  {
@@ -256,7 +262,8 @@ Camera::Camera(const std::string& camera_id,int packet_size,int receive_priority
 
         // Set the camera to continuous frame mode
         DEB_TRACE() << "Set the camera to continuous frame mode";
-        Camera_->TriggerSelector.SetValue(TriggerSelector_AcquisitionStart);
+        if(!m_is_usb)
+            Camera_->TriggerSelector.SetValue(TriggerSelector_AcquisitionStart);
         Camera_->AcquisitionMode.SetValue(AcquisitionMode_Continuous);
         if ( IsAvailable(Camera_->ExposureAuto ))
         {
@@ -896,7 +903,8 @@ void Camera::setExpTime(double exp_time)
     try
     {
         if(mode !=  ExtGate) { // the expTime can not be set in ExtGate!
-            if (GenApi::IsAvailable(Camera_->ExposureTimeBaseAbs))
+            // ExposureTimeBaseAbs is only available for GigE Ace camera
+            if (IsAvailable(Camera_->ExposureTimeBaseAbs))
             {
                 //If scout or pilot, exposure time has to be adjusted using
                 // the exposure time base + the exposure time raw.
@@ -906,14 +914,15 @@ void Camera::setExpTime(double exp_time)
                 Camera_->ExposureTimeRaw.SetValue(static_cast<int> (raw));
                 raw = static_cast<double> (Camera_->ExposureTimeRaw.GetValue());
                 Camera_->ExposureTimeBaseAbs.SetValue(1E6 * (exp_time / raw));
-		DEB_TRACE() << "raw = " << raw;
-		DEB_TRACE() << "ExposureTimeBaseAbs = " << (1E6 * (exp_time / raw));			
+                DEB_TRACE() << "raw = " << raw;
+                DEB_TRACE() << "ExposureTimeBaseAbs = " << (1E6 * (exp_time / raw));			
             }
             else
             {
-                // More recent model like ACE and AVIATOR support direct programming of the exposure using
-                // the exposure time absolute.
-                Camera_->ExposureTimeAbs.SetValue(1E6 * exp_time);
+                if (m_is_usb)
+                    Camera_->ExposureTime.SetValue(1E6 * exp_time);
+                else
+                    Camera_->ExposureTimeAbs.SetValue(1E6 * exp_time);
             }
         }
         
@@ -928,8 +937,8 @@ void Camera::setExpTime(double exp_time)
         {
             double periode = m_latency_time + m_exp_time;
             Camera_->AcquisitionFrameRateEnable.SetValue(true);
-            Camera_->AcquisitionFrameRateAbs.SetValue(1 / periode);
-            DEB_TRACE() << DEB_VAR1(Camera_->AcquisitionFrameRateAbs.GetValue());
+            Camera_->AcquisitionFrameRate.SetValue(1 / periode);
+            DEB_TRACE() << DEB_VAR1(Camera_->AcquisitionFrameRate.GetValue());
         }
 
     }
@@ -948,7 +957,7 @@ void Camera::getExpTime(double& exp_time)
     DEB_MEMBER_FUNCT();
     try
     {
-        double value = 1.0E-6 * static_cast<double>(Camera_->ExposureTimeAbs.GetValue());    
+        double value = 1.0E-6 * static_cast<double>(Camera_->ExposureTime.GetValue());    
         exp_time = value;
     }
     catch (Pylon::GenericException &e)
@@ -989,7 +998,8 @@ void Camera::getExposureTimeRange(double& min_expo, double& max_expo) const
     try
     {
         // Pilot and and Scout do not have TimeAbs capability
-        if (GenApi::IsAvailable(Camera_->ExposureTimeBaseAbs))
+        // ExposureTimeBaseAbs is available fot GigE cams only
+        if (IsAvailable(Camera_->ExposureTimeBaseAbs) && !m_is_usb)
         {
             // memorize initial value of exposure time
             DEB_TRACE() << "memorize initial value of exposure time";
@@ -1017,8 +1027,16 @@ void Camera::getExposureTimeRange(double& min_expo, double& max_expo) const
         }
         else
         {
-            min_expo = Camera_->ExposureTimeAbs.GetMin()*1e-6;
-            max_expo = Camera_->ExposureTimeAbs.GetMax()*1e-6;
+            if (m_is_usb) {
+                cout << "GETTIG USB" << endl;
+                min_expo = Camera_->ExposureTime.GetMin()*1e-6;
+                max_expo = Camera_->ExposureTime.GetMax()*1e-6;
+            } else {
+                cout << "GETTIG GIG" << endl;
+                min_expo = Camera_->ExposureTimeAbs.GetMin()*1e-6;
+                max_expo = Camera_->ExposureTimeAbs.GetMax()*1e-6;
+            }
+            
         }
     }
     catch (Pylon::GenericException &e)
@@ -1040,7 +1058,12 @@ void Camera::getLatTimeRange(double& min_lat, double& max_lat) const
     try
     {
         min_lat = 0;
-        double minAcqFrameRate = Camera_->AcquisitionFrameRateAbs.GetMin();
+        double minAcqFrameRate = 0;
+
+        if (m_is_usb)
+            minAcqFrameRate = Camera_->AcquisitionFrameRate.GetMin();
+        else
+            minAcqFrameRate = Camera_->AcquisitionFrameRateAbs.GetMin();
         if (minAcqFrameRate > 0)
             max_lat = 1 / minAcqFrameRate;
         else
@@ -1126,7 +1149,10 @@ void Camera::getFrameRate(double& frame_rate) const
     DEB_MEMBER_FUNCT();
     try
     {
-        frame_rate = static_cast<double>(Camera_->ResultingFrameRateAbs.GetValue());        
+        if (m_is_usb)
+            frame_rate = static_cast<double>(Camera_->ResultingFrameRate.GetValue());        
+        else 
+            frame_rate = static_cast<double>(Camera_->ResultingFrameRateAbs.GetValue());        
     }
     catch (Pylon::GenericException &e)
     {
@@ -1350,10 +1376,10 @@ bool Camera::isRoiAvailable() const
   bool isAvailable = false;
   try
     {
-      isAvailable = (GenApi::IsAvailable(Camera_->OffsetX) && GenApi::IsWritable(Camera_->OffsetX) &&
-		     GenApi::IsAvailable(Camera_->OffsetY) && GenApi::IsWritable(Camera_->OffsetY) &&
-		     GenApi::IsAvailable(Camera_->Width) && GenApi::IsWritable(Camera_->Width) &&
-		     GenApi::IsAvailable(Camera_->Height) && GenApi::IsWritable(Camera_->Height));
+      isAvailable = (IsAvailable(Camera_->OffsetX) && IsWritable(Camera_->OffsetX) &&
+		     IsAvailable(Camera_->OffsetY) && IsWritable(Camera_->OffsetY) &&
+		     IsAvailable(Camera_->Width) && IsWritable(Camera_->Width) &&
+		     IsAvailable(Camera_->Height) && IsWritable(Camera_->Height));
     }
   catch(Pylon::GenericException &e)
     {
@@ -1653,6 +1679,9 @@ void Camera::getGain(double& gain) const
 
             gain = double(gain_raw - low_limit) / (hight_limit - low_limit);
         }
+        if (GenApi::IsAvailable(Camera_->Gain)) {
+            gain = double(Camera_->Gain.GetValue());
+        }
         else
         {
             gain = 0.;
@@ -1675,12 +1704,13 @@ void Camera::setFrameTransmissionDelay(int ftd)
     DEB_PARAM() << DEB_VAR1(ftd);
     try
     {
-        Camera_->GevSCFTD.SetValue(ftd);
+        if (!m_is_usb)
+            Camera_->GevSCFTD.SetValue(ftd);
     }
-    catch (Pylon::GenericException &e)
+    catch (Pylon::CIntegerParameter &e)
     {
         // Error handling
-        THROW_HW_ERROR(Error) << e.GetDescription();
+        // THROW_HW_ERROR(Error) << e.GetDescription();
     }
 }
 
@@ -1718,7 +1748,7 @@ void Camera::getAcquisitionFrameRateEnable(bool& AFRE) const
         else
         {
             AFRE = false;
-//			THROW_HW_ERROR(Error)<<"AcquisitionFrameRateEnable Parameter is not Available !";
+			THROW_HW_ERROR(Error)<<"AcquisitionFrameRateEnable Parameter is not Available !";
         }
     }
     catch (Pylon::GenericException &e)
@@ -1763,7 +1793,7 @@ void Camera::getAcquisitionFrameRateAbs(int& AFRA) const
         else
         {
             AFRA = false;
-//			THROW_HW_ERROR(Error)<<"AcquisitionFrameRateAbs Parameter is not Available !";
+			THROW_HW_ERROR(Error)<<"AcquisitionFrameRateAbs Parameter is not Available !";
         }
     }
     catch (Pylon::GenericException &e)
@@ -1923,10 +1953,6 @@ void Camera::getAcquisitionFrameCount(int& AFC) const
 void Camera::getStatisticsTotalBufferCount(long& count)
 {
 	DEB_MEMBER_FUNCT();
-	// if(StreamGrabber_ != NULL)
-	// 	count = StreamGrabber_->Statistic_Total_Buffer_Count.GetValue();
-	// else
-	// 	count = -1;//Because Not valid when acquisition is stopped
     count = Camera_->GetStreamGrabberParams().Statistic_Total_Buffer_Count.GetValue();
 }
 
@@ -1937,10 +1963,6 @@ void Camera::getStatisticsTotalBufferCount(long& count)
 void Camera::getStatisticsFailedBufferCount(long& count)
 {
 	DEB_MEMBER_FUNCT();
-	// if(StreamGrabber_ != NULL)
-	// 	count = StreamGrabber_->Statistic_Failed_Buffer_Count.GetValue();
-	// else
-	// 	count = -1;//Because Not valid when acquisition is stopped
     count = Camera_->GetStreamGrabberParams().Statistic_Failed_Buffer_Count.GetValue();
 }
 //---------------------------    
