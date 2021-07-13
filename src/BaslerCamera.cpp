@@ -45,8 +45,6 @@ using namespace std;
 #define max(A,B) std::max(A,B)
 #endif
 
-const static int DEFAULT_TIME_OUT = 600000; // 10 minutes
-
 const static std::string IP_PREFIX = "ip://";
 const static std::string SN_PREFIX = "sn://";
 const static std::string UNAME_PREFIX = "uname://";
@@ -103,7 +101,6 @@ Camera::Camera(const std::string& camera_id,int packet_size,int receive_priority
           m_thread_running(true),
           m_image_number(0),
           m_exp_time(1.),
-          m_timeout(DEFAULT_TIME_OUT),
           m_latency_time(0.),
           m_socketBufferSize(0),
           m_is_usb(false),
@@ -134,7 +131,6 @@ Camera::Camera(const std::string& camera_id,int packet_size,int receive_priority
             // m_camera_id is not really necessarily an IP, it may also be a DNS name
             Pylon::String_t pylon_camera_ip(_get_ip_addresse(m_camera_id.substr(IP_PREFIX.size()).c_str()));
             //- Find the Pylon device thanks to its IP Address
-            cout << "SET IP: " << pylon_camera_ip << endl;
             di.SetIpAddress( pylon_camera_ip);
             DEB_TRACE() << "Create the Pylon device attached to ip address: "
 			<< DEB_VAR1(m_camera_id);
@@ -143,7 +139,6 @@ Camera::Camera(const std::string& camera_id,int packet_size,int receive_priority
 	{
             Pylon::String_t serial_number(m_camera_id.substr(SN_PREFIX.size()).c_str());
             //- Find the Pylon device thanks to its serial number
-            cout << "SET SERIAL: " << serial_number << endl;
             di.SetSerialNumber(serial_number);
             DEB_TRACE() << "Create the Pylon device attached to serial number: "
 			<< DEB_VAR1(m_camera_id);
@@ -180,7 +175,7 @@ Camera::Camera(const std::string& camera_id,int packet_size,int receive_priority
         m_detector_type  = Camera_->GetDeviceInfo().GetVendorName();
         m_detector_model = Camera_->GetDeviceInfo().GetModelName();
         m_is_usb = Camera_->GetDeviceInfo().IsUsbDriverTypeAvailable();
-        
+
         //- Infos:
         DEB_TRACE() << DEB_VAR2(m_detector_type,m_detector_model);
         DEB_TRACE() << "SerialNumber    = " << Camera_->GetDeviceInfo().GetSerialNumber();
@@ -515,7 +510,7 @@ void Camera::_AcqThread::threadFunction()
                 frame_info.acq_frame_nb = m_cam.m_image_number;
                 void *framePt = buffer_mgr.getFrameBufferPtr(m_cam.m_image_number);
                 const FrameDim& fDim = buffer_mgr.getFrameDim();
-                void* srcPt = ((char*)pImageBuffer) + (0 * fDim.getMemSize());
+                void* srcPt = ((char*)pImageBuffer);
                 DEB_TRACE() << "memcpy:" << DEB_VAR2(srcPt,framePt);
                 memcpy(framePt,srcPt,fDim.getMemSize());
 
@@ -530,7 +525,6 @@ void Camera::_AcqThread::threadFunction()
                             Pylon::DisplayImage( 1, ptrGrabResult );
             #endif
             } else {
-                cout << "Error: " << std::hex << ptrGrabResult->GetErrorCode() << std::dec << " " << ptrGrabResult->GetErrorDescription() << endl;
                 if(m_cam.m_nb_frames) //in "snap" mode , acquisition must be stopped 
                 {
                     m_cam._setStatus(Camera::Fault,false);
@@ -1028,11 +1022,9 @@ void Camera::getExposureTimeRange(double& min_expo, double& max_expo) const
         else
         {
             if (m_is_usb) {
-                cout << "GETTIG USB" << endl;
                 min_expo = Camera_->ExposureTime.GetMin()*1e-6;
                 max_expo = Camera_->ExposureTime.GetMax()*1e-6;
             } else {
-                cout << "GETTIG GIG" << endl;
                 min_expo = Camera_->ExposureTimeAbs.GetMin()*1e-6;
                 max_expo = Camera_->ExposureTimeAbs.GetMax()*1e-6;
             }
@@ -1161,15 +1153,7 @@ void Camera::getFrameRate(double& frame_rate) const
     }        
     DEB_RETURN() << DEB_VAR1(frame_rate);
 }
-//-----------------------------------------------------
-//
-//-----------------------------------------------------
-void Camera::setTimeout(int TO)
-{
-    DEB_MEMBER_FUNCT();
-    DEB_PARAM() << DEB_VAR1(TO);    
-    m_timeout = TO;
-}
+
 //-----------------------------------------------------
 //
 //-----------------------------------------------------
