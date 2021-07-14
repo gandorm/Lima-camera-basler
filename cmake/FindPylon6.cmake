@@ -26,9 +26,8 @@ if(WIN32)
 endif()
 
 list(APPEND PYLON_DEFINITIONS USE_GIGE)
-
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(Pylon5 DEFAULT_MSG
+find_package_handle_standard_args(Pylon6 DEFAULT_MSG
   PYLON_LIBRARIES
   PYLON_INCLUDE_DIRS
 )
