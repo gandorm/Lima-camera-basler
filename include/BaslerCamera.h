@@ -222,6 +222,7 @@ class BASLER_EXPORT Camera
     volatile bool               m_thread_running;
     int                         m_image_number;
     double                      m_exp_time;
+    int                         m_timeout;
     double                      m_latency_time;
     int                         m_socketBufferSize;
     volatile bool               m_is_usb;
